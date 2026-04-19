@@ -33,7 +33,7 @@ async def translate_prompt(req: TranslateRequest):
     if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
         raise HTTPException(status_code=400, detail="無效組別")
 
-    url = f"[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=){API_KEYS[req.groupId]}"
+url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEYS[req.groupId]}"
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
     
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -51,7 +51,7 @@ async def generate_image(req: GenerateRequest):
     if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
         raise HTTPException(status_code=400, detail="無效組別")
 
-    url = f"[https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=](https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=){API_KEYS[req.groupId]}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={API_KEYS[req.groupId]}"
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
