@@ -51,7 +51,7 @@ async def generate_image(req: GenerateRequest):
     if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
         raise HTTPException(status_code=400, detail="無效組別")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={API_KEYS[req.groupId]}"
+  url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={API_KEYS[req.groupId]}"
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
