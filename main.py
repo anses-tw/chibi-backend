@@ -31,9 +31,10 @@ class TranslateRequest(BaseModel):
 @app.post("/api/translate")
 async def translate_prompt(req: TranslateRequest):
     if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
-        raise HTTPException(status_code=400, detail="無效組別")
+        raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEYS[req.groupId]}"
+    # 翻譯網址 (完美避開格式錯誤)
+    url = "https://" + "generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + API_KEYS[req.groupId]
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
     
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -49,16 +50,17 @@ class GenerateRequest(BaseModel):
 @app.post("/api/generate")
 async def generate_image(req: GenerateRequest):
     if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
-        raise HTTPException(status_code=400, detail="無效組別")
+        raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-  url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={API_KEYS[req.groupId]}"
+    # 生圖網址 (完美避開格式錯誤)
+    url = "https://" + "generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=" + API_KEYS[req.groupId]
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
         if resp.status_code == 429:
             raise HTTPException(status_code=429, detail="魔法額度滿載，請稍後再試！")
         if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail="生圖失敗")
+            raise HTTPException(status_code=resp.status_code, detail=f"生圖失敗: {resp.text}")
             
         base64_img = resp.json()["predictions"][0]["bytesBase64Encoded"]
         return {"imageUrl": f"data:image/png;base64,{base64_img}"}
