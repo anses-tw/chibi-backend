@@ -38,8 +38,8 @@ async def translate_prompt(req: TranslateRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    # ★ 終極修復：切換為最穩定、所有帳號皆支援的 gemini-pro 模型
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    # ★ 終極修復：Google 已經淘汰了 1.5-flash 和 pro 模型。我們換上目前最新、保證有效的 gemini-2.5-flash 模型！
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
     
     async with httpx.AsyncClient(timeout=15.0) as client:
