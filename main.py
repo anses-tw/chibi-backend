@@ -34,7 +34,7 @@ API_KEYS = {
 class TranslateRequest(BaseModel):
     groupId: int
     chineseIdea: str
-    imageBase64: Optional[str] = None # 接收前端傳來的圖片
+    imageBase64: Optional[str] = None 
 
 @app.post("/api/translate")
 async def translate_prompt(req: TranslateRequest):
@@ -42,7 +42,6 @@ async def translate_prompt(req: TranslateRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    # 使用最具相容性且支援多模態的 gemini-1.5-flash 模型
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
     parts = []
@@ -63,21 +62,22 @@ async def translate_prompt(req: TranslateRequest):
 
     parts.append({"text": system_prompt})
     
-    payload = {
-        "contents": [{"parts": parts}]
-    }
+    payload = {"contents": [{"parts": parts}]}
     
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, json=payload)
-        if resp.status_code != 200:
-            # 解析並萃取 Google 官方真實的錯誤訊息，回傳給前端顯示
-            try:
-                error_msg = resp.json().get("error", {}).get("message", resp.text)
-            except:
-                error_msg = resp.text
-            print(f"Google 視覺分析報錯: {error_msg}")
-            raise HTTPException(status_code=400, detail=f"Google 拒絕請求: {error_msg}")
-        return {"englishPrompt": resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code == 200:
+                return {"englishPrompt": resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()}
+            else:
+                print(f"Google 視覺分析報錯: {resp.text}")
+                raise Exception("Google API Error")
+    except Exception as e:
+        print(f"Google 翻譯/視覺分析失敗，啟用【終極不斷線備用方案】: {e}")
+        # 【終極防呆機制】當 Google 突然傲嬌拒絕時，系統會自動給出一組安全咒語，保證畫面流程絕對不會卡住！
+        safe_idea = req.chineseIdea if req.chineseIdea else "cute student"
+        fallback_safe_prompt = f"chibi style, cute anime character, {safe_idea}, highly detailed, masterpiece"
+        return {"englishPrompt": fallback_safe_prompt}
 
 class GenerateRequest(BaseModel):
     groupId: int
@@ -91,25 +91,32 @@ async def generate_image(req: GenerateRequest):
 
     google_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={api_key}"
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # 第一階段：嘗試 Google
-        resp = await client.post(google_url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
-        
-        if resp.status_code == 200:
-            base64_img = resp.json()["predictions"][0]["bytesBase64Encoded"]
-            return {"imageUrl": f"data:image/png;base64,{base64_img}"}
-        else:
-            # 第二階段：Google 失敗，使用備用線路
-            try:
-                fallback_prompt = urllib.parse.quote(req.prompt)
-                seed_number = random.randint(1, 1000000)
-                fallback_url = f"https://image.pollinations.ai/prompt/{fallback_prompt}?width=512&height=512&nologo=true&seed={seed_number}"
-                
-                fb_resp = await client.get(fallback_url)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # 嘗試第一防線：Google 官方生圖
+            resp = await client.post(google_url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
+            
+            if resp.status_code == 200:
+                base64_img = resp.json()["predictions"][0]["bytesBase64Encoded"]
+                return {"imageUrl": f"data:image/png;base64,{base64_img}"}
+            else:
+                print(f"Google 生圖報錯 (準備切換備用線路): {resp.text}")
+                raise Exception("Google Imagen API Error")
+    except Exception as e:
+        print(f"Google 拒絕生圖，【自動切換至 Pollinations 備用伺服器】: {e}")
+        try:
+            # 嘗試第二防線：開源生圖伺服器 (將咒語長度安全裁切，防止網址過長)
+            safe_prompt = req.prompt[:500] 
+            fallback_prompt = urllib.parse.quote(safe_prompt)
+            seed_number = random.randint(1, 1000000)
+            fallback_url = f"https://image.pollinations.ai/prompt/{fallback_prompt}?width=512&height=512&nologo=true&seed={seed_number}"
+            
+            async with httpx.AsyncClient(timeout=30.0) as fb_client:
+                fb_resp = await fb_client.get(fallback_url)
                 if fb_resp.status_code == 200:
                     base64_img = base64.b64encode(fb_resp.content).decode('utf-8')
                     return {"imageUrl": f"data:image/png;base64,{base64_img}"}
                 else:
-                    raise HTTPException(status_code=400, detail="備用伺服器繁忙，請修改幾個字再試一次！")
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"生成圖片失敗: {str(e)}")
+                    raise HTTPException(status_code=400, detail="備用伺服器繁忙，請稍後再試一次！")
+        except Exception as fb_e:
+            raise HTTPException(status_code=400, detail=f"所有生圖線路皆忙碌中，請重新嘗試: {str(fb_e)}")
