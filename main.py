@@ -42,9 +42,9 @@ async def translate_prompt(req: TranslateRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    # 使用最具相容性且支援多模態的 gemini-1.5-flash 模型
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    # 建構多模態 Prompt (給 AI 眼睛看)
     parts = []
     system_prompt = "你是一個專業的 AI 提示詞工程師。"
     
@@ -70,8 +70,13 @@ async def translate_prompt(req: TranslateRequest):
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(url, json=payload)
         if resp.status_code != 200:
-            print(f"Google 視覺分析報錯: {resp.text}")
-            raise HTTPException(status_code=400, detail=f"Google API 拒絕 (代碼 {resp.status_code})")
+            # 解析並萃取 Google 官方真實的錯誤訊息，回傳給前端顯示
+            try:
+                error_msg = resp.json().get("error", {}).get("message", resp.text)
+            except:
+                error_msg = resp.text
+            print(f"Google 視覺分析報錯: {error_msg}")
+            raise HTTPException(status_code=400, detail=f"Google 拒絕請求: {error_msg}")
         return {"englishPrompt": resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()}
 
 class GenerateRequest(BaseModel):
