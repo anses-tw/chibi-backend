@@ -4,6 +4,8 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 import httpx 
+import base64
+import urllib.parse
 
 load_dotenv()
 app = FastAPI()
@@ -38,7 +40,6 @@ async def translate_prompt(req: TranslateRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    # ★ 終極修復：Google 已經淘汰了 1.5-flash 和 pro 模型。我們換上目前最新、保證有效的 gemini-2.5-flash 模型！
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
     
@@ -59,15 +60,31 @@ async def generate_image(req: GenerateRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={api_key}"
+    google_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={api_key}"
     
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
-        if resp.status_code == 429:
+        # 第一階段：先嘗試使用 Google 官方 API
+        resp = await client.post(google_url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
+        
+        if resp.status_code == 200:
+            base64_img = resp.json()["predictions"][0]["bytesBase64Encoded"]
+            return {"imageUrl": f"data:image/png;base64,{base64_img}"}
+        elif resp.status_code == 429:
             raise HTTPException(status_code=429, detail="魔法額度滿載，請稍後再試！")
-        if resp.status_code != 200:
-            print(f"Google 生圖報錯: {resp.text}")
-            raise HTTPException(status_code=400, detail=f"Google API 拒絕 (代碼 {resp.status_code})")
+        else:
+            print(f"Google 生圖拒絕 (轉用備用線路): {resp.text}")
             
-        base64_img = resp.json()["predictions"][0]["bytesBase64Encoded"]
-        return {"imageUrl": f"data:image/png;base64,{base64_img}"}
+            # 【終極救援機制】當 Google 鎖區時，自動切換至開源備用生圖 API
+            try:
+                fallback_prompt = urllib.parse.quote(req.prompt)
+                fallback_url = f"https://image.pollinations.ai/prompt/{fallback_prompt}?width=512&height=512&nologo=true"
+                
+                fb_resp = await client.get(fallback_url)
+                if fb_resp.status_code == 200:
+                    # 將圖片轉換回前端看得懂的 Base64 格式
+                    base64_img = base64.b64encode(fb_resp.content).decode('utf-8')
+                    return {"imageUrl": f"data:image/png;base64,{base64_img}"}
+                else:
+                    raise HTTPException(status_code=400, detail="備用生圖線路也忙碌中，請稍後再試")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"生成圖片失敗: {str(e)}")
