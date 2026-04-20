@@ -8,7 +8,6 @@ import httpx
 load_dotenv()
 app = FastAPI()
 
-# 允許前端連線到後端 (CORS 設定)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -16,12 +15,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 【終極防呆】自動清除 API Key 頭尾不小心複製到的空白鍵或換行
+def get_clean_key(group_id):
+    key = os.getenv(f"GEMINI_API_KEY_{group_id}")
+    return key.strip() if key else None
+
 API_KEYS = {
-    1: os.getenv("GEMINI_API_KEY_1"),
-    2: os.getenv("GEMINI_API_KEY_2"),
-    3: os.getenv("GEMINI_API_KEY_3"),
-    4: os.getenv("GEMINI_API_KEY_4"),
-    5: os.getenv("GEMINI_API_KEY_5"),
+    1: get_clean_key(1),
+    2: get_clean_key(2),
+    3: get_clean_key(3),
+    4: get_clean_key(4),
+    5: get_clean_key(5),
 }
 
 class TranslateRequest(BaseModel):
@@ -30,21 +34,19 @@ class TranslateRequest(BaseModel):
 
 @app.post("/api/translate")
 async def translate_prompt(req: TranslateRequest):
-    if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
+    api_key = API_KEYS.get(req.groupId)
+    if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    # 組合網址 (將網址拆開寫，完美防止編輯器自動加上中括號與超連結)
-    host = "generativelanguage.googleapis" + ".com"
-    model = "gemini-1.5-flash-latest"
-    url = f"https://{host}/v1beta/models/{model}:generateContent?key={API_KEYS[req.groupId]}"
-    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
     
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(url, json={"contents": [{"parts": [{"text": f"{system_prompt}\n想法：{req.chineseIdea}"}]}]})
         if resp.status_code != 200:
-            # 如果失敗，把 Google 的錯誤訊息直接顯示出來
-            raise HTTPException(status_code=resp.status_code, detail=f"Google API 拒絕: {resp.text}")
+            # 故意回傳 400 來區分錯誤，避免跟路徑 404 搞混
+            print(f"Google 翻譯報錯: {resp.text}")
+            raise HTTPException(status_code=400, detail=f"Google API 拒絕 (代碼 {resp.status_code})")
         return {"englishPrompt": resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()}
 
 class GenerateRequest(BaseModel):
@@ -53,20 +55,19 @@ class GenerateRequest(BaseModel):
 
 @app.post("/api/generate")
 async def generate_image(req: GenerateRequest):
-    if req.groupId not in API_KEYS or not API_KEYS[req.groupId]:
+    api_key = API_KEYS.get(req.groupId)
+    if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    # 組合生圖網址
-    host = "generativelanguage.googleapis" + ".com"
-    img_model = "imagen-3.0-generate-001"
-    url = f"https://{host}/v1beta/models/{img_model}:predict?key={API_KEYS[req.groupId]}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={api_key}"
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, json={"instances": [{"prompt": req.prompt}], "parameters": {"sampleCount": 1}})
         if resp.status_code == 429:
             raise HTTPException(status_code=429, detail="魔法額度滿載，請稍後再試！")
         if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=f"生圖失敗: {resp.text}")
+            print(f"Google 生圖報錯: {resp.text}")
+            raise HTTPException(status_code=400, detail=f"Google API 拒絕 (代碼 {resp.status_code})")
             
         base64_img = resp.json()["predictions"][0]["bytesBase64Encoded"]
         return {"imageUrl": f"data:image/png;base64,{base64_img}"}
