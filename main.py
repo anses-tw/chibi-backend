@@ -35,7 +35,7 @@ async def translate_prompt(req: TranslateRequest):
 
     # 組合網址 (將網址拆開寫，完美防止編輯器自動加上中括號與超連結)
     host = "generativelanguage.googleapis" + ".com"
-    model = "gemini-1.5-flash"
+    model = "gemini-1.5-flash-latest"
     url = f"https://{host}/v1beta/models/{model}:generateContent?key={API_KEYS[req.groupId]}"
     
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
