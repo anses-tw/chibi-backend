@@ -38,13 +38,13 @@ async def translate_prompt(req: TranslateRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="無效組別或尚未設定金鑰")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # ★ 終極修復：切換為最穩定、所有帳號皆支援的 gemini-pro 模型
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
     system_prompt = "你是一個AI繪圖專家。將中文想法翻譯為逗號分隔英文Prompt，加入chibi style, masterpiece等。只回傳英文。"
     
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(url, json={"contents": [{"parts": [{"text": f"{system_prompt}\n想法：{req.chineseIdea}"}]}]})
         if resp.status_code != 200:
-            # 故意回傳 400 來區分錯誤，避免跟路徑 404 搞混
             print(f"Google 翻譯報錯: {resp.text}")
             raise HTTPException(status_code=400, detail=f"Google API 拒絕 (代碼 {resp.status_code})")
         return {"englishPrompt": resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()}
